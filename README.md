@@ -12,6 +12,7 @@ if the Pi, its power or the internet is down, the pings stop and Healthchecks se
 | Wagerl           | service, `127.0.0.1:8220/health`, `https://wagerl.anmibu.com/health`      |
 | Buchnancials     | service, `127.0.0.1:8200/health`, `https://buchnancials.anmibu.com/health`|
 | Games            | service, `127.0.0.1:8210`, `https://games.anmibu.com`                     |
+| Jellyfin         | `127.0.0.1:8096/health` (Docker container), media disk mounted and readable (`/mnt/media/Medien/Filme`, `/Serien`), disk < 95 % |
 | MCP-Server       | gateway, site, e-paper, intervals.icu, system status (services + ports), `https://mcp.anmibu.com` |
 | Homeboy          | cloudflared, claude-remote-control, disk < 90 %, CPU < 80 °C, RAM            |
 | Backup *         | the backup scripts ping after every successful run (daily, 4 h grace)     |

@@ -1,6 +1,7 @@
 import http.server
 import json
 import sys
+import tempfile
 import threading
 import unittest
 from pathlib import Path
@@ -56,6 +57,12 @@ class WatchdogTests(unittest.TestCase):
         self.assertIsNone(watchdog.check_mem(0))
         self.assertIn("Arbeitsspeicher", watchdog.check_mem(101))
         self.assertIn("°C", watchdog.check_temp(-1) or "°C")
+
+    def test_media_folder(self):
+        self.assertIsNone(watchdog.check_media(str(Path(__file__).resolve().parent)))          # exists, not empty
+        self.assertIn("nicht lesbar", watchdog.check_media("/nonexistent/medien"))
+        with tempfile.TemporaryDirectory() as empty:
+            self.assertIn("leer", watchdog.check_media(empty))
 
     def test_a_crashing_test_is_a_failure(self):
         with mock.patch.dict(watchdog.CHECKS, {"tcp": lambda port: 1 / 0}):

@@ -30,7 +30,7 @@ FAILS_BEFORE_ALERT = 2
 USER_AGENT = "homeboy-watchdog/1"
 
 # Test specs: ("unit", name) ("http", url, ok) ("tcp", port) ("disk", path, max_percent) ("temp", max_celsius)
-# ("mem", min_available_percent). For "http", ok is a set of status codes or "<500" (any answer from the app).
+# ("mem", min_available_percent) ("media", folder: mounted disk answers and is not empty). For "http", ok is a set of status codes or "<500" (any answer from the app).
 GROUPS = {
     "wagerl": ("Wagerl", [
         ("unit", "wagerl"),
@@ -53,6 +53,11 @@ GROUPS = {
         ("http", "http://127.0.0.1:8001/", "<500"),       # gateway: answers 404/401, any answer means alive
         ("tcp", 8000), ("tcp", 8100), ("tcp", 8101),       # intervals.icu, e-paper, system status (no health URL)
         ("http", "https://mcp.anmibu.com/", "<500"),
+    ]),
+    "jellyfin": ("Jellyfin (Medien)", [
+        ("http", "http://127.0.0.1:8096/health", {200}),   # Docker container, no user unit to ask
+        ("media", "/mnt/media/Medien/Filme"), ("media", "/mnt/media/Medien/Serien"),
+        ("disk", "/mnt/media", 95),
     ]),
     "homeboy": ("Homeboy (Pi, Tunnel)", [
         ("unit", "cloudflared"), ("unit", "claude-remote-control"),
@@ -111,7 +116,18 @@ def check_mem(min_percent):
     return None if percent >= min_percent else f"Nur noch {percent:.0f} % Arbeitsspeicher frei"
 
 
-CHECKS = {"unit": check_unit, "http": check_http, "tcp": check_tcp, "disk": check_disk, "temp": check_temp, "mem": check_mem}
+def check_media(path):
+    """The external disk is mounted at boot with nofail, so it can simply be missing; a hung USB disk must not hang us."""
+    try:
+        r = subprocess.run(["ls", "-A", path], capture_output=True, text=True, timeout=8)
+    except subprocess.TimeoutExpired:
+        return f"{path} antwortet nicht (Platte hängt?)"
+    if r.returncode != 0:
+        return f"{path} nicht lesbar (Platte nicht eingehängt?)"
+    return None if r.stdout.strip() else f"{path} ist leer (Platte nicht eingehängt?)"
+
+
+CHECKS = {"unit": check_unit, "http": check_http, "tcp": check_tcp, "disk": check_disk, "temp": check_temp, "mem": check_mem, "media": check_media}
 
 
 def run_test(spec):
