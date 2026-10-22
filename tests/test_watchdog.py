@@ -3,6 +3,7 @@ import json
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -63,6 +64,14 @@ class WatchdogTests(unittest.TestCase):
         self.assertIn("nicht lesbar", watchdog.check_media("/nonexistent/medien"))
         with tempfile.TemporaryDirectory() as empty:
             self.assertIn("leer", watchdog.check_media(empty))
+
+    def test_maintenance_flag_skips_a_group_and_expires(self):
+        with tempfile.TemporaryDirectory() as d:
+            with mock.patch.object(watchdog, "MAINT_DIR", Path(d)):
+                self.assertFalse(watchdog.in_maintenance("x"))
+                (Path(d) / "x").touch()
+                self.assertTrue(watchdog.in_maintenance("x"))
+                self.assertFalse(watchdog.in_maintenance("x", now=time.time() + 13 * 3600))   # forgotten flag expires
 
     def test_a_crashing_test_is_a_failure(self):
         with mock.patch.dict(watchdog.CHECKS, {"tcp": lambda port: 1 / 0}):

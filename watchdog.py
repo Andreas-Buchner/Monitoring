@@ -11,6 +11,7 @@ and then
     watchdog.py              run all groups and ping
     watchdog.py --dry-run    run all groups, print the result, ping nothing
     watchdog.py ping KEY     send a success ping for KEY (used by the backup scripts)
+    watchdog.py maintenance on|off KEY   pause a group while its hardware is being worked on (auto-expires after 12 h)
 """
 
 import json
@@ -18,6 +19,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -27,6 +29,8 @@ HERE = Path(__file__).resolve().parent
 CHECKS_FILE = HERE / "checks.json"   # group key -> ping URL (written by setup_checks.py, secret)
 STATE_FILE = HERE / "state.json"     # consecutive failures per group
 FAILS_BEFORE_ALERT = 2
+MAINT_DIR = HERE / "maintenance"      # one empty file per group key = "being worked on, do not alarm"
+MAINT_MAX_HOURS = 12                  # a forgotten flag must not silence a group for good
 USER_AGENT = "homeboy-watchdog/1"
 
 # Test specs: ("unit", name) ("http", url, ok) ("tcp", port) ("disk", path, max_percent) ("temp", max_celsius)
@@ -170,10 +174,50 @@ def decide(failures, previous_fails):
     return ("fail" if count >= FAILS_BEFORE_ALERT else "wait"), count
 
 
+def in_maintenance(key, now=None):
+    flag = MAINT_DIR / key
+    try:
+        age = (now or time.time()) - flag.stat().st_mtime
+    except OSError:
+        return False
+    return age < MAINT_MAX_HOURS * 3600
+
+
+def set_maintenance(key, on):
+    """on: pause the Healthchecks check (so the silence is not an alarm) and skip the group; off: the next success ping resumes it."""
+    if key not in GROUPS:
+        print(f"unbekannte Gruppe '{key}'", file=sys.stderr); return 1
+    MAINT_DIR.mkdir(exist_ok=True)
+    flag = MAINT_DIR / key
+    if not on:
+        flag.unlink(missing_ok=True)
+        print(f"{key}: Wartung beendet, der naechste Lauf meldet wieder"); return 0
+    flag.touch()
+    url = load(CHECKS_FILE).get(key)
+    api_key = next((l.split("=", 1)[1].strip() for l in (HERE / "healthchecks.env").read_text().splitlines() if l.startswith("HC_API_KEY=")), None)
+    if url and api_key:
+        uuid = url.rstrip("/").rsplit("/", 1)[-1]
+        request = urllib.request.Request(f"https://healthchecks.io/api/v3/checks/{uuid}/pause", data=b"", method="POST",
+                                         headers={"X-Api-Key": api_key, "User-Agent": USER_AGENT})
+        try:
+            urllib.request.urlopen(request, timeout=15).read()
+            print(f"{key}: Wartung an, Check bei Healthchecks pausiert (laeuft nach {MAINT_MAX_HOURS} h von selbst ab)")
+        except (urllib.error.URLError, OSError) as exc:
+            print(f"{key}: Wartung an, aber Pausieren bei Healthchecks fehlgeschlagen ({exc}); es kann ein Alarm kommen")
+    return 0
+
+
 def run(dry=False):
     urls, state = load(CHECKS_FILE), load(STATE_FILE)
+    active = [key for key in GROUPS if not in_maintenance(key)]
     with ThreadPoolExecutor(max_workers=len(GROUPS)) as pool:
-        results = dict(zip(GROUPS, pool.map(lambda key: run_group(GROUPS[key][1]), GROUPS)))
+        results = dict(zip(active, pool.map(lambda key: run_group(GROUPS[key][1]), active)))
+    for key in GROUPS:
+        if key not in results:
+            state[key] = 0
+            state[f"{key}_logged"] = False
+            if dry:
+                print(f"{GROUPS[key][0]}: Wartung, wird uebersprungen")
     for key, failures in results.items():
         name = GROUPS[key][0]
         action, state[key] = decide(failures, int(state.get(key, 0)))
@@ -205,6 +249,8 @@ def main(argv):
             print(f"kein Check '{argv[1]}' eingerichtet", file=sys.stderr)
             return 0  # a missing monitor must never break the job that calls us
         return 0 if ping(url) else 1
+    if argv[:1] == ["maintenance"] and len(argv) == 3 and argv[1] in ("on", "off"):
+        return set_maintenance(argv[2], argv[1] == "on")
     run(dry="--dry-run" in argv)
     return 0
 
