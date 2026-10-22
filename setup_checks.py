@@ -15,7 +15,7 @@ from watchdog import CHECKS_FILE, GROUPS, HERE
 
 API = "https://healthchecks.io/api/v3/checks/"
 # Backups report once a day; the services report every minute and may be silent for 2 + 3 minutes.
-BACKUPS = {"backup-buchnancials": "Backup Buchnancials", "backup-wagerl": "Backup Wagerl"}
+BACKUPS = {"backup-buchnancials": "Backup Buchnancials", "backup-wagerl": "Backup Wagerl", "backup-secrets": "Backup Secrets"}
 
 
 def api_key():
