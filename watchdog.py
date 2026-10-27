@@ -31,10 +31,17 @@ STATE_FILE = HERE / "state.json"     # consecutive failures per group
 FAILS_BEFORE_ALERT = 2
 MAINT_DIR = HERE / "maintenance"      # one empty file per group key = "being worked on, do not alarm"
 MAINT_MAX_HOURS = 12                  # a forgotten flag must not silence a group for good
+SMART_DIR = HERE / "smart"            # per disk: last SMART result and the error counters seen so far
+SMART_EVERY = 3600                    # read SMART once an hour; in between the last result counts
+# raw counters that only ever grow when the disk gets worse: any rise is one alarm (then the new value is the baseline)
+SMART_GROWING = {5: "defekte Sektoren (ersetzt)", 187: "nicht korrigierbare Fehler", 196: "Sektor-Ersetzungen",
+                 197: "wackelige Sektoren", 198: "unlesbare Sektoren", 178: "Reserveblöcke verbraucht",
+                 181: "Schreibfehler", 182: "Löschfehler"}
 USER_AGENT = "homeboy-watchdog/1"
 
 # Test specs: ("unit", name) ("http", url, ok) ("tcp", port) ("disk", path, max_percent) ("temp", max_celsius)
-# ("mem", min_available_percent) ("media", folder: mounted disk answers and is not empty). For "http", ok is a set of status codes or "<500" (any answer from the app).
+# ("mem", min_available_percent) ("media", folder: mounted disk answers and is not empty)
+# ("smart", /dev/disk/by-id/..., label, max_celsius: SMART health, growing error counters, temperature). For "http", ok is a set of status codes or "<500" (any answer from the app).
 GROUPS = {
     "wagerl": ("Wagerl", [
         ("unit", "wagerl"),
@@ -62,6 +69,7 @@ GROUPS = {
         ("http", "http://127.0.0.1:8096/health", {200}),   # Docker container, no user unit to ask
         ("media", "/mnt/media/Medien/Filme"), ("media", "/mnt/media/Medien/Serien"),
         ("disk", "/mnt/media", 95),
+        ("smart", "/dev/disk/by-id/ata-WDC_WD20SPZX-22UA7T0_WD-WXF1EA83DVRS", "Mediendisk", 55),
     ]),
     "access-log": ("Zugriffs-Log (Proxy, Admin-Panel)", [
         ("unit", "access-log-proxy"), ("unit", "access-log-panel"),
@@ -71,6 +79,7 @@ GROUPS = {
     "homeboy": ("Homeboy (Pi, Tunnel)", [
         ("unit", "cloudflared"), ("unit", "claude-remote-control"),
         ("disk", "/", 90), ("temp", 80), ("mem", 8),
+        ("smart", "/dev/disk/by-id/ata-Dogfish_SSD_256GB_KC20210317268", "System-SSD", 65),
     ]),
 }
 
@@ -136,7 +145,54 @@ def check_media(path):
     return None if r.stdout.strip() else f"{path} ist leer (Platte nicht eingehängt?)"
 
 
-CHECKS = {"unit": check_unit, "http": check_http, "tcp": check_tcp, "disk": check_disk, "temp": check_temp, "mem": check_mem, "media": check_media}
+def read_smart(device):
+    """smartctl's JSON for the disk, or None while a sleeping hard disk is not to be woken up (-n standby)."""
+    r = subprocess.run(["sudo", "-n", "smartctl", "-n", "standby", "-H", "-A", "-j", device],
+                       capture_output=True, text=True, timeout=60)
+    data = json.loads(r.stdout or "{}")
+    if r.returncode & 3:  # bit 0/1: smartctl could not run or open the disk; exit 2 with power_mode standby = asleep
+        if "standby" in json.dumps(data.get("power_mode", "")).lower() or "STANDBY" in r.stdout:
+            return None
+        raise RuntimeError(f"smartctl Fehler {r.returncode}")
+    return data
+
+
+def check_smart(device, label, max_celsius, now=None, reader=read_smart):
+    """The disk's own health report (SMART). Read once an hour; the last result counts in between."""
+    now = time.time() if now is None else now
+    SMART_DIR.mkdir(exist_ok=True)
+    path = SMART_DIR / (Path(device).name + ".json")
+    st = load(path)
+    if "checked" in st and now - st["checked"] < SMART_EVERY:
+        return st.get("msg")
+    try:
+        data = reader(device)
+    except Exception as exc:
+        msg = f"{label}: SMART nicht lesbar ({exc})"
+        path.write_text(json.dumps({**st, "checked": now, "msg": msg}))
+        return msg
+    if data is None:  # asleep: keep the last verdict, look again next minute
+        return st.get("msg")
+    msgs, baseline = [], st.get("baseline", {})
+    if data.get("smart_status", {}).get("passed") is False:
+        msgs.append(f"{label}: SMART meldet, dass die Platte ausfällt")
+    for a in data.get("ata_smart_attributes", {}).get("table", []):
+        raw, key = a.get("raw", {}).get("value", 0), str(a["id"])
+        if a.get("thresh", 0) > 0 and a.get("value", 255) <= a["thresh"]:
+            msgs.append(f"{label}: {a['name']} unter der Herstellergrenze ({a['value']} <= {a['thresh']})")
+        if a["id"] in SMART_GROWING:
+            if key in baseline and raw > baseline[key]:
+                msgs.append(f"{label}: {SMART_GROWING[a['id']]} gestiegen von {baseline[key]} auf {raw}")
+            baseline[key] = raw
+    celsius = data.get("temperature", {}).get("current")
+    if celsius is not None and celsius > max_celsius:
+        msgs.append(f"{label}: {celsius} °C warm")
+    msg = "; ".join(msgs) or None
+    path.write_text(json.dumps({"checked": now, "msg": msg, "baseline": baseline}))
+    return msg
+
+
+CHECKS = {"smart": check_smart, "unit": check_unit, "http": check_http, "tcp": check_tcp, "disk": check_disk, "temp": check_temp, "mem": check_mem, "media": check_media}
 
 
 def run_test(spec):

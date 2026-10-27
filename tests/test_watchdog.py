@@ -105,5 +105,41 @@ class WatchdogTests(unittest.TestCase):
             self.assertEqual(watchdog.main(["ping", "backup-nope"]), 0)
 
 
+
+class SmartTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        patcher = mock.patch.object(watchdog, "SMART_DIR", Path(self.tmp.name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self.tmp.cleanup)
+
+    @staticmethod
+    def disk(reallocated=0, passed=True, celsius=40):
+        return lambda device: {"smart_status": {"passed": passed}, "temperature": {"current": celsius},
+                               "ata_smart_attributes": {"table": [
+                                   {"id": 5, "name": "Reallocated_Sector_Ct", "value": 100, "thresh": 50,
+                                    "raw": {"value": reallocated}}]}}
+
+    def test_healthy_disk_and_hourly_cache(self):
+        self.assertIsNone(watchdog.check_smart("/dev/x", "SSD", 60, now=1000, reader=self.disk()))
+        # within the hour the disk is not read again
+        self.assertIsNone(watchdog.check_smart("/dev/x", "SSD", 60, now=2000, reader=self.disk(passed=False)))
+
+    def test_growing_counter_alarms_once(self):
+        watchdog.check_smart("/dev/x", "SSD", 60, now=0, reader=self.disk(0))
+        msg = watchdog.check_smart("/dev/x", "SSD", 60, now=4000, reader=self.disk(3))
+        self.assertIn("von 0 auf 3", msg)
+        self.assertIsNone(watchdog.check_smart("/dev/x", "SSD", 60, now=8000, reader=self.disk(3)))
+
+    def test_failing_hot_unreadable_and_asleep(self):
+        self.assertIn("ausfällt", watchdog.check_smart("/dev/a", "SSD", 60, now=0, reader=self.disk(passed=False)))
+        self.assertIn("70 °C", watchdog.check_smart("/dev/b", "SSD", 60, now=0, reader=self.disk(celsius=70)))
+
+        def broken(device):
+            raise RuntimeError("weg")
+        self.assertIn("nicht lesbar", watchdog.check_smart("/dev/c", "SSD", 60, now=0, reader=broken))
+        self.assertIsNone(watchdog.check_smart("/dev/d", "HDD", 60, now=0, reader=lambda d: None))
+
 if __name__ == "__main__":
     unittest.main()
