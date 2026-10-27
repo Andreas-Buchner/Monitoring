@@ -63,6 +63,11 @@ GROUPS = {
         ("media", "/mnt/media/Medien/Filme"), ("media", "/mnt/media/Medien/Serien"),
         ("disk", "/mnt/media", 95),
     ]),
+    "access-log": ("Zugriffs-Log (Proxy, Admin-Panel)", [
+        ("unit", "access-log-proxy"), ("unit", "access-log-panel"),
+        ("http", "http://127.0.0.1:8300/__access-log/health", {200}),
+        ("http", "http://127.0.0.1:8310/health", {200}),
+    ]),
     "homeboy": ("Homeboy (Pi, Tunnel)", [
         ("unit", "cloudflared"), ("unit", "claude-remote-control"),
         ("disk", "/", 90), ("temp", 80), ("mem", 8),
