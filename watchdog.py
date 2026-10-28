@@ -58,6 +58,11 @@ GROUPS = {
         ("http", "http://127.0.0.1:8210/", {200}),
         ("http", "https://games.anmibu.com/", {200}),
     ]),
+    "tourdesalon": ("Tour de Salon", [
+        ("unit", "tourdesalon"),
+        ("http", "http://127.0.0.1:8230/api/health", {200}),
+        # öffentliche Adresse kommt dazu, sobald der DNS-Eintrag tourdesalon.anmibu.com steht
+    ]),
     "mcp": ("MCP-Server", [
         ("unit", "mcp-gateway"), ("unit", "mcp-gateway-site"), ("unit", "epaper-backend"),
         ("unit", "intervals-icu-backend"), ("unit", "system-status-backend"),
