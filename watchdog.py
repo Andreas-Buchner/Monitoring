@@ -61,7 +61,7 @@ GROUPS = {
     "tourdesalon": ("Tour de Salon", [
         ("unit", "tourdesalon"),
         ("http", "http://127.0.0.1:8230/api/health", {200}),
-        # öffentliche Adresse kommt dazu, sobald der DNS-Eintrag tourdesalon.anmibu.com steht
+        ("http", "https://tourdesalon.anmibu.com/api/health", {200}),
     ]),
     "mcp": ("MCP-Server", [
         ("unit", "mcp-gateway"), ("unit", "mcp-gateway-site"), ("unit", "epaper-backend"),
