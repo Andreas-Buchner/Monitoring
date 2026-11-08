@@ -63,6 +63,11 @@ GROUPS = {
         ("http", "http://127.0.0.1:8230/api/health", {200}),
         ("http", "https://tourdesalon.anmibu.com/api/health", {200}),
     ]),
+    "skiwunder": ("Skiwunder", [
+        ("unit", "skiwunder"),
+        ("http", "http://127.0.0.1:8240/", {200}),
+        ("http", "https://skiwunder.anmibu.com/", {200}),
+    ]),
     "mcp": ("MCP-Server", [
         ("unit", "mcp-gateway"), ("unit", "mcp-gateway-site"), ("unit", "epaper-backend"),
         ("unit", "intervals-icu-backend"), ("unit", "system-status-backend"),
