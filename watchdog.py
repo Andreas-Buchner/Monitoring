@@ -289,6 +289,7 @@ def run(dry=False):
             state[f"{key}_logged"] = False
             if dry:
                 print(f"{GROUPS[key][0]}: Wartung, wird uebersprungen")
+    pings = []
     for key, failures in results.items():
         name = GROUPS[key][0]
         action, state[key] = decide(failures, int(state.get(key, 0)))
@@ -305,9 +306,12 @@ def run(dry=False):
         if not url:
             continue
         if action == "ok":
-            ping(url)
+            pings.append((url, None))
         elif action == "fail":
-            ping(url + "/fail", line)
+            pings.append((url + "/fail", line))
+    # In parallel: one slow ping (e.g. broken IPv6, ~40 s per ping) must not delay the others past the check's grace time
+    with ThreadPoolExecutor(max_workers=max(len(pings), 1)) as pool:
+        list(pool.map(lambda args: ping(*args), pings))
     if not dry:
         STATE_FILE.write_text(json.dumps(state))
     return results

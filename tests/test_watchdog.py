@@ -96,6 +96,7 @@ class WatchdogTests(unittest.TestCase):
             self.assertEqual(sent, [("https://hc.example/a", None)])        # b failed once: quiet
             sent.clear()
             watchdog.run()
+            sent.sort()                                                      # pings go out in parallel
             self.assertEqual(sent[0], ("https://hc.example/a", None))
             self.assertEqual(sent[1][0], "https://hc.example/b/fail")        # failed twice: alert
             self.assertIn("Port 9", sent[1][1])
