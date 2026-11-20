@@ -301,7 +301,9 @@ def set_maintenance(key, on):
         print(f"{key}: Wartung beendet, der naechste Lauf meldet wieder"); return 0
     flag.touch()
     url = load(CHECKS_FILE).get(key)
-    api_key = next((l.split("=", 1)[1].strip() for l in (HERE / "healthchecks.env").read_text().splitlines() if l.startswith("HC_API_KEY=")), None)
+    env = HERE / "healthchecks.env"   # only on the Pi; homebigboy has no API key, so it cannot pause its check
+    lines = env.read_text().splitlines() if env.exists() else []
+    api_key = next((l.split("=", 1)[1].strip() for l in lines if l.startswith("HC_API_KEY=")), None)
     if url and api_key:
         uuid = url.rstrip("/").rsplit("/", 1)[-1]
         request = urllib.request.Request(f"https://healthchecks.io/api/v3/checks/{uuid}/pause", data=b"", method="POST",
