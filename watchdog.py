@@ -92,6 +92,18 @@ GROUPS = {
         ("smart", "/dev/disk/by-id/ata-Dogfish_SSD_256GB_KC20210317268", "System-SSD", 65),
     ]),
 }
+# homebigboy (ThinkCentre M75q, Ubuntu) runs its own copy of this watchdog, so a dead ThinkCentre is noticed
+# by its missing pings, independent of the Pi.
+BIGBOY_GROUPS = {
+    "homebigboy": ("Homebigboy (ThinkCentre)", [
+        ("unit", "claude-remote-control"),
+        ("disk", "/", 90), ("temp", 90), ("mem", 8),
+        ("smart", "/dev/disk/by-id/nvme-SAMSUNG_MZVL4512HBLU-00BL7_S67VNF0TB45439", "System-SSD", 75),
+    ]),
+}
+ALL_GROUPS = {**GROUPS, **BIGBOY_GROUPS}   # setup_checks.py creates every check, each host only runs its own
+if socket.gethostname() == "homebigboy":
+    GROUPS = BIGBOY_GROUPS
 
 
 def check_unit(name):
@@ -127,10 +139,24 @@ def check_disk(path, max_percent):
     return None if percent < max_percent else f"Festplatte {path} zu {percent:.0f} % voll"
 
 
-def check_temp(max_celsius):
+def cpu_celsius():
+    """The Pi has thermal_zone0; AMD PCs (homebigboy) only show the CPU as hwmon "k10temp"."""
     try:
-        celsius = int(Path("/sys/class/thermal/thermal_zone0/temp").read_text()) / 1000
+        return int(Path("/sys/class/thermal/thermal_zone0/temp").read_text()) / 1000
     except (OSError, ValueError):
+        pass
+    for hwmon in Path("/sys/class/hwmon").glob("hwmon*"):
+        try:
+            if (hwmon / "name").read_text().strip() == "k10temp":
+                return int((hwmon / "temp1_input").read_text()) / 1000
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def check_temp(max_celsius):
+    celsius = cpu_celsius()
+    if celsius is None:
         return None  # no sensor, nothing to judge
     return None if celsius < max_celsius else f"CPU-Temperatur {celsius:.0f} °C"
 
@@ -194,6 +220,16 @@ def check_smart(device, label, max_celsius, now=None, reader=read_smart):
             if key in baseline and raw > baseline[key]:
                 msgs.append(f"{label}: {SMART_GROWING[a['id']]} gestiegen von {baseline[key]} auf {raw}")
             baseline[key] = raw
+    nvme = data.get("nvme_smart_health_information_log")
+    if nvme:  # NVMe has no attribute table, only a health log
+        if nvme.get("critical_warning", 0):
+            msgs.append(f"{label}: NVMe meldet eine kritische Warnung ({nvme['critical_warning']})")
+        if nvme.get("percentage_used", 0) >= 90:
+            msgs.append(f"{label}: zu {nvme['percentage_used']} % abgenutzt")
+        raw = nvme.get("media_errors", 0)
+        if "nvme_media" in baseline and raw > baseline["nvme_media"]:
+            msgs.append(f"{label}: Medienfehler gestiegen von {baseline['nvme_media']} auf {raw}")
+        baseline["nvme_media"] = raw
     celsius = data.get("temperature", {}).get("current")
     if celsius is not None and celsius > max_celsius:
         msgs.append(f"{label}: {celsius} °C warm")

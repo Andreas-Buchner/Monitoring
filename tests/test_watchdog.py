@@ -142,5 +142,13 @@ class SmartTests(unittest.TestCase):
         self.assertIn("nicht lesbar", watchdog.check_smart("/dev/c", "SSD", 60, now=0, reader=broken))
         self.assertIsNone(watchdog.check_smart("/dev/d", "HDD", 60, now=0, reader=lambda d: None))
 
+    def test_nvme_health_log(self):
+        nvme = lambda errors=0, warn=0, used=2: (lambda d: {"smart_status": {"passed": True}, "temperature": {"current": 40},
+            "nvme_smart_health_information_log": {"media_errors": errors, "critical_warning": warn, "percentage_used": used}})
+        self.assertIsNone(watchdog.check_smart("/dev/n1", "SSD", 70, now=0, reader=nvme()))
+        self.assertIn("Medienfehler", watchdog.check_smart("/dev/n1", "SSD", 70, now=4000, reader=nvme(errors=1)))
+        self.assertIn("kritische", watchdog.check_smart("/dev/n2", "SSD", 70, now=0, reader=nvme(warn=1)))
+        self.assertIn("abgenutzt", watchdog.check_smart("/dev/n3", "SSD", 70, now=0, reader=nvme(used=95)))
+
 if __name__ == "__main__":
     unittest.main()

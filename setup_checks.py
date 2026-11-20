@@ -11,7 +11,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-from watchdog import CHECKS_FILE, GROUPS, HERE
+from watchdog import ALL_GROUPS, CHECKS_FILE, HERE
 
 API = "https://healthchecks.io/api/v3/checks/"
 # Backups report once a day; the services report every minute and may be silent for 2 + 3 minutes.
@@ -35,7 +35,7 @@ def upsert(key, payload):
 def main():
     key = api_key()
     urls = {}
-    for group, (name, _tests) in GROUPS.items():
+    for group, (name, _tests) in ALL_GROUPS.items():
         urls[group] = upsert(key, {"name": f"Homeboy: {name}", "timeout": 120, "grace": 180,
                                    "desc": "Prüft Dienst und öffentliche Adresse. Meldet sich jede Minute."})
     for group, name in BACKUPS.items():
