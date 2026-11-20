@@ -15,6 +15,7 @@ if the Pi, its power or the internet is down, the pings stop and Healthchecks se
 | Jellyfin         | `127.0.0.1:8096/health` (Docker container), media disk mounted and readable (`/mnt/media/Medien/Filme`, `/Serien`), disk < 95 %, SMART of the media disk (healthy, no growing error counters, < 55 °C) |
 | MCP-Server       | gateway, site, e-paper, intervals.icu, system status (services + ports), `https://mcp.anmibu.com` |
 | Homeboy          | cloudflared, claude-remote-control, disk < 90 %, CPU < 80 °C, RAM, SMART of the system SSD (< 65 °C) |
+| Homebigboy       | runs on the ThinkCentre itself (own copy of this repo, `GROUPS` picked by hostname): claude-remote-control, disk < 90 %, CPU < 90 °C (k10temp), RAM, NVMe SMART (< 75 °C) |
 | Backup *         | the backup scripts (Buchnancials, Wagerl, encrypted secrets bundle) ping after every successful run (daily, 4 h grace) |
 
 A test that fails once is ignored (a restart during a deploy); the second failure in a row sends
